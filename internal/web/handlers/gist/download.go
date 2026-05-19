@@ -5,9 +5,7 @@ import (
 	"bytes"
 	"net/url"
 	"strconv"
-	"strings"
 
-	"github.com/thomiceli/opengist/internal/config"
 	"github.com/thomiceli/opengist/internal/db"
 	"github.com/thomiceli/opengist/internal/web/context"
 )
@@ -29,13 +27,8 @@ func RawFile(ctx *context.Context) error {
 		ctx.Response().Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	}
 
-	lowerName := strings.ToLower(file.Filename)
-	serveHtml := config.C.RawServeHtml && (strings.HasSuffix(lowerName, ".html") || strings.HasSuffix(lowerName, ".htm"))
-
 	if file.MimeType.CanBeEmbedded() {
 		ctx.Response().Header().Set("Content-Type", file.MimeType.ContentType)
-	} else if serveHtml {
-		ctx.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
 	} else if file.MimeType.IsText() {
 		ctx.Response().Header().Set("Content-Type", "text/plain; charset=utf-8")
 	} else {
@@ -43,11 +36,7 @@ func RawFile(ctx *context.Context) error {
 	}
 
 	ctx.Response().Header().Set("Content-Disposition", "inline; filename=\""+url.PathEscape(file.Filename)+"\"")
-	if serveHtml {
-		ctx.Response().Header().Del("X-Content-Type-Options")
-	} else {
-		ctx.Response().Header().Set("X-Content-Type-Options", "nosniff")
-	}
+	ctx.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	return ctx.PlainText(200, file.Content)
 }
 

@@ -4,13 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
-	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/thomiceli/opengist/internal/config"
-	"github.com/thomiceli/opengist/internal/db"
 	webtest "github.com/thomiceli/opengist/internal/web/test"
 )
 
@@ -93,40 +89,6 @@ func TestRawFile(t *testing.T) {
 		_, _, username, identifier := s.CreateGist(t, "2")
 
 		s.Request(t, "GET", "/"+username+"/"+identifier+"/raw/HEAD/file.txt", nil, 404)
-	})
-}
-
-func TestRawFileHtmlServing(t *testing.T) {
-	s := webtest.Setup(t)
-	defer webtest.Teardown(t)
-
-	s.Request(t, "POST", "/register", db.UserDTO{Username: "thomas", Password: "thomas"}, 0)
-	s.Login(t, "thomas")
-	resp := s.Request(t, "POST", "/", url.Values{
-		"title":   {"HTML"},
-		"name":    {"index.html"},
-		"content": {"<!DOCTYPE html><html><head><title>t</title></head><body><h1>hello</h1></body></html>"},
-		"private": {"0"},
-	}, 302)
-	location := resp.Header.Get("Location")
-	parts := strings.Split(strings.TrimPrefix(location, "/"), "/")
-	require.Len(t, parts, 2)
-	username, identifier := parts[0], parts[1]
-	s.Logout()
-
-	t.Run("FlagOff", func(t *testing.T) {
-		config.C.RawServeHtml = false
-		resp := s.Request(t, "GET", "/"+username+"/"+identifier+"/raw/HEAD/index.html", nil, 200)
-		require.Equal(t, "text/plain; charset=utf-8", resp.Header.Get("Content-Type"))
-		require.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
-	})
-
-	t.Run("FlagOn", func(t *testing.T) {
-		config.C.RawServeHtml = true
-		defer func() { config.C.RawServeHtml = false }()
-		resp := s.Request(t, "GET", "/"+username+"/"+identifier+"/raw/HEAD/index.html", nil, 200)
-		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
-		require.Empty(t, resp.Header.Get("X-Content-Type-Options"))
 	})
 }
 

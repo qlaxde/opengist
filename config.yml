@@ -56,11 +56,6 @@ http.port: 6157
 # Enable or disable git operations (clone, pull, push) via HTTP (either `true` or `false`). Default: true
 http.git-enabled: true
 
-# Serve raw HTML files with `Content-Type: text/html` so browsers render them, and drop the
-# `X-Content-Type-Options: nosniff` header on raw responses. Only enable on trusted, authenticated
-# deployments — disabling sniff protection lets gist content execute as a page (XSS). Default: false
-raw.serve-html: false
-
 # File permissions for Unix socket (octal format). Default: 0666
 unix-socket-permissions: 0666
 
