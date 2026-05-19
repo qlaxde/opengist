@@ -28,6 +28,28 @@ mapped explicitly (`.html`, `.htm`, `.js`, `.mjs`, `.css`, `.json`, `.svg`,
 (images, fonts, audio, video, PDF, etc.) and finally to the gist's detected
 MIME.
 
+## Pinning to a revision
+
+By default `/site` serves the latest revision (`HEAD`). The response is
+returned with `Cache-Control: no-cache`, so a refresh after editing the
+gist always shows the new version.
+
+To share a stable link that survives later edits, prefix the path with
+`@<revision>/`:
+
+```
+https://opengist.example.com/<user>/<gist>/site/@<commit>
+https://opengist.example.com/<user>/<gist>/site/@<commit>/app.js
+```
+
+Pinned responses are returned with `Cache-Control: public, max-age=31536000,
+immutable`, since the content at a given commit never changes. Relative
+references inside the pinned HTML resolve to siblings at the same revision,
+so a shared link is fully self-contained.
+
+The "View site" button on the gist page automatically pins to whatever
+revision you're currently viewing.
+
 ## Visibility
 
 The endpoint honors the same visibility rules as the gist page itself:

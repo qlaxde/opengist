@@ -191,36 +191,88 @@ func GistJs(ctx *context.Context) error {
 // file name it returns that file with its real Content-Type. The
 // X-Content-Type-Options: nosniff header is dropped so HTML executes and ES
 // modules / stylesheets load. Visibility rules follow gistInit.
+//
+// A revision can be pinned by prefixing the path with `@<revision>/`, e.g.
+// `/site/@abc123/app.js`. Relative references inside an HTML file pinned this
+// way resolve to siblings at the same revision, so a shared link survives
+// later edits to the gist.
 func GistSite(ctx *context.Context) error {
 	gist := ctx.GetData("gist").(*db.Gist)
-	filename := ctx.Param("*")
+	revision, filename := parseSitePath(ctx.Param("*"))
+	pinned := revision != "HEAD"
 
 	if filename == "" || strings.HasSuffix(filename, "/") {
-		files, _, err := gist.Files("HEAD", false)
+		files, _, err := gist.Files(revision, false)
 		if err != nil {
+			if _, ok := err.(*git.RevisionNotFoundError); ok {
+				return ctx.NotFound("Revision not found")
+			}
 			return ctx.ErrorRes(500, "Error fetching files", err)
 		}
 		for _, f := range files {
 			if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
-				return writeSiteFile(ctx, f)
+				return writeSiteFile(ctx, f, pinned)
 			}
 		}
 		return ctx.NotFound("No HTML file found in this gist")
 	}
 
-	file, err := gist.File("HEAD", filename, false)
+	file, err := gist.File(revision, filename, false)
 	if err != nil {
+		if _, ok := err.(*git.RevisionNotFoundError); ok {
+			return ctx.NotFound("Revision not found")
+		}
 		return ctx.ErrorRes(500, "Error getting file content", err)
 	}
 	if file == nil {
 		return ctx.NotFound("File not found")
 	}
-	return writeSiteFile(ctx, file)
+	return writeSiteFile(ctx, file, pinned)
 }
 
-func writeSiteFile(ctx *context.Context, file *git.File) error {
+// parseSitePath splits the /site/* wildcard into a revision and a file path.
+// "@<rev>/<file>" or "@<rev>" pins the revision; anything else stays on HEAD.
+// A literal segment starting with "@" is only treated as a pin when the rest
+// looks like a git ref (hex, or HEAD); otherwise it's a filename.
+func parseSitePath(p string) (revision, filename string) {
+	if strings.HasPrefix(p, "@") {
+		rest := strings.TrimPrefix(p, "@")
+		rev, after, _ := strings.Cut(rest, "/")
+		if isGitRefLike(rev) {
+			return rev, after
+		}
+	}
+	return "HEAD", p
+}
+
+func isGitRefLike(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s == "HEAD" {
+		return true
+	}
+	if len(s) < 4 || len(s) > 40 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func writeSiteFile(ctx *context.Context, file *git.File, pinned bool) error {
 	ctx.Response().Header().Del("X-Content-Type-Options")
 	ctx.Response().Header().Set("Content-Type", siteContentType(file))
+	if pinned {
+		// Revision-pinned content is immutable; let the browser cache aggressively.
+		ctx.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		// HEAD content changes when the gist is edited; force revalidation.
+		ctx.Response().Header().Set("Cache-Control", "no-cache")
+	}
 	return ctx.PlainText(200, file.Content)
 }
 

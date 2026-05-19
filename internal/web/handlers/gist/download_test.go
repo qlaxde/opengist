@@ -201,6 +201,80 @@ func TestGistSite(t *testing.T) {
 			map[string]string{"Authorization": "Token " + plain})
 		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
 	})
+
+	t.Run("HeadResponseIsNoCache", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body>v1</body></html>",
+		})
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 200)
+		require.Equal(t, "no-cache", resp.Header.Get("Cache-Control"))
+	})
+
+	t.Run("PinnedRevisionServesOldContent", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body>v1</body></html>",
+		})
+		gist, err := db.GetGist(user, id)
+		require.NoError(t, err)
+		commits, err := gist.Log(0)
+		require.NoError(t, err)
+		require.Len(t, commits, 1)
+		v1Hash := commits[0].Hash
+
+		// Edit the gist as the owner — creates v2.
+		s.Login(t, "thomas")
+		s.Request(t, "POST", "/"+user+"/"+id+"/edit", url.Values{
+			"title":   {"Site"},
+			"name":    {"index.html"},
+			"content": {"<!DOCTYPE html><html><body>v2</body></html>"},
+		}, 302)
+		s.Logout()
+
+		// HEAD reflects v2.
+		head := s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 200)
+		headBody, _ := io.ReadAll(head.Body)
+		require.Contains(t, string(headBody), "v2")
+
+		// Pinned to v1 still serves v1, with immutable cache.
+		pinned := s.Request(t, "GET", "/"+user+"/"+id+"/site/@"+v1Hash, nil, 200)
+		pinnedBody, _ := io.ReadAll(pinned.Body)
+		require.Contains(t, string(pinnedBody), "v1")
+		require.Contains(t, pinned.Header.Get("Cache-Control"), "immutable")
+	})
+
+	t.Run("PinnedRevisionFilePath", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body></body></html>",
+			"app.js":     "export const v = 1;",
+		})
+		gist, err := db.GetGist(user, id)
+		require.NoError(t, err)
+		commits, _ := gist.Log(0)
+		hash := commits[0].Hash
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site/@"+hash+"/app.js", nil, 200)
+		require.Equal(t, "application/javascript; charset=utf-8", resp.Header.Get("Content-Type"))
+		body, _ := io.ReadAll(resp.Body)
+		require.Equal(t, "export const v = 1;", string(body))
+	})
+
+	t.Run("UnknownRevision404", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body></body></html>",
+		})
+		s.Request(t, "GET", "/"+user+"/"+id+"/site/@deadbeef", nil, 404)
+	})
+
+	t.Run("AtPrefixWithNonRefIsFilename", func(t *testing.T) {
+		// A file literally named "@notes" is fetched as a file, not as a revision.
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body></body></html>",
+			"@notes":     "hi",
+		})
+		// "notes" isn't hex/HEAD, so the handler treats "@notes" as a filename.
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site/@notes", nil, 200)
+		body, _ := io.ReadAll(resp.Body)
+		require.Equal(t, "hi", string(body))
+	})
 }
 
 func TestDownloadFile(t *testing.T) {
