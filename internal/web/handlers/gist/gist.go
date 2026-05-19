@@ -62,6 +62,15 @@ func GistIndex(ctx *context.Context) error {
 
 	renderedFiles := render.RenderFiles(files)
 
+	hasHtmlFile := false
+	for _, f := range files {
+		if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
+			hasHtmlFile = true
+			break
+		}
+	}
+	ctx.SetData("hasHtmlFile", hasHtmlFile)
+
 	comments, err := loadRenderedComments(gist.ID)
 	if err != nil {
 		return ctx.ErrorRes(500, "Error loading comments", err)
