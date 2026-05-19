@@ -48,8 +48,14 @@ func TryAuthenticationForGit(username, password string, write bool) (*db.User, e
 		return nil, err
 	}
 
+	// Try DB password first if one is set, but fall through to PAT on failure.
+	// Without the fall-through, an account with a stale local password could
+	// never use a PAT for git auth — which is exactly the OIDC-only case this
+	// function exists to support.
 	if user.Password != "" {
-		return tryDbLogin(user, password)
+		if u, derr := tryDbLogin(user, password); derr == nil {
+			return u, nil
+		}
 	}
 	if ldap.Enabled() {
 		if u, lerr := tryLdapLogin(username, password); lerr == nil {
