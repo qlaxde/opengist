@@ -265,7 +265,8 @@ func isGitRefLike(s string) bool {
 
 func writeSiteFile(ctx *context.Context, file *git.File, pinned bool) error {
 	ctx.Response().Header().Del("X-Content-Type-Options")
-	ctx.Response().Header().Set("Content-Type", siteContentType(file))
+	contentType := siteContentType(file)
+	ctx.Response().Header().Set("Content-Type", contentType)
 	if pinned {
 		// Revision-pinned content is immutable; let the browser cache aggressively.
 		ctx.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -273,7 +274,55 @@ func writeSiteFile(ctx *context.Context, file *git.File, pinned bool) error {
 		// HEAD content changes when the gist is edited; force revalidation.
 		ctx.Response().Header().Set("Cache-Control", "no-cache")
 	}
+
+	// For HTML pages, inject a <base> tag so relative href/src resolve to
+	// /<user>/<gist>/site/<asset> regardless of whether the visitor's URL
+	// ended with a trailing slash. Without this, hitting /<gist>/site (no
+	// trailing slash) makes the browser resolve "styles.css" against the
+	// parent /<gist>/ rather than /<gist>/site/, and every relative asset
+	// 404s. RemoveTrailingSlash middleware (server-wide) makes a redirect
+	// approach loop, so injection is the cleanest semantic fix.
+	if strings.HasPrefix(contentType, "text/html") {
+		body := injectBase(file.Content, siteBaseHref(ctx, pinned))
+		return ctx.PlainText(200, body)
+	}
+
 	return ctx.PlainText(200, file.Content)
+}
+
+func siteBaseHref(ctx *context.Context, pinned bool) string {
+	gist := ctx.GetData("gist").(*db.Gist)
+	base := "/" + gist.User.Username + "/" + gist.Identifier() + "/site/"
+	if pinned {
+		// Preserve the revision pin so internal links stay on the same snapshot.
+		if rev, _ := parseSitePath(ctx.Param("*")); rev != "HEAD" {
+			base += "@" + rev + "/"
+		}
+	}
+	return base
+}
+
+// injectBase adds <base href="..."> after <head> if the document doesn't
+// already declare its own <base>. Case-insensitive match on <head>; if not
+// found, prepends to the document.
+func injectBase(html, href string) string {
+	lower := strings.ToLower(html)
+	if strings.Contains(lower, "<base ") {
+		return html
+	}
+	tag := `<base href="` + href + `">`
+	if idx := strings.Index(lower, "<head>"); idx >= 0 {
+		insertAt := idx + len("<head>")
+		return html[:insertAt] + tag + html[insertAt:]
+	}
+	// Some documents use <head attr=...>; find the closing > of the head open tag.
+	if idx := strings.Index(lower, "<head"); idx >= 0 {
+		if end := strings.Index(html[idx:], ">"); end >= 0 {
+			insertAt := idx + end + 1
+			return html[:insertAt] + tag + html[insertAt:]
+		}
+	}
+	return tag + html
 }
 
 // siteContentType picks a real Content-Type for a gist file served at /site/.
