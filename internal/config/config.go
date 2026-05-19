@@ -53,6 +53,8 @@ type config struct {
 	HttpPort string `yaml:"http.port" env:"OG_HTTP_PORT"`
 	HttpGit  bool   `yaml:"http.git-enabled" env:"OG_HTTP_GIT_ENABLED"`
 
+	RawServeHtml bool `yaml:"raw.serve-html" env:"OG_RAW_SERVE_HTML"`
+
 	UnixSocketPermissions string `yaml:"unix-socket-permissions" env:"OG_UNIX_SOCKET_PERMISSIONS"`
 
 	SshGit            bool   `yaml:"ssh.git-enabled" env:"OG_SSH_GIT_ENABLED"`
