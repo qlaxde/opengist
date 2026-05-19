@@ -95,17 +95,17 @@ func TestRawFile(t *testing.T) {
 	})
 }
 
-func TestGistHtml(t *testing.T) {
+func TestGistSite(t *testing.T) {
 	s := webtest.Setup(t)
 	defer webtest.Teardown(t)
 
 	s.Register(t, "thomas")
 	s.Register(t, "alice")
 
-	createHtmlGist := func(t *testing.T, visibility string, files map[string]string) (string, string) {
+	createSiteGist := func(t *testing.T, visibility string, files map[string]string) (string, string) {
 		s.Login(t, "thomas")
 		form := url.Values{
-			"title":   {"HTML"},
+			"title":   {"Site"},
 			"private": {visibility},
 		}
 		for name, content := range files {
@@ -119,60 +119,85 @@ func TestGistHtml(t *testing.T) {
 		return parts[0], parts[1]
 	}
 
-	t.Run("PublicGist", func(t *testing.T) {
-		user, id := createHtmlGist(t, "0", map[string]string{
+	t.Run("IndexServesFirstHtml", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
 			"index.html": "<!DOCTYPE html><html><body><h1>hello</h1></body></html>",
 		})
-		resp := s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 200)
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 200)
 		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
 		require.Empty(t, resp.Header.Get("X-Content-Type-Options"))
 		body, _ := io.ReadAll(resp.Body)
 		require.Contains(t, string(body), "<h1>hello</h1>")
 	})
 
-	t.Run("NoHtmlFile", func(t *testing.T) {
-		user, id := createHtmlGist(t, "0", map[string]string{
+	t.Run("SiblingJsServedAsJavascript", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body></body></html>",
+			"app.js":     "export const hi = 1;",
+		})
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site/app.js", nil, 200)
+		require.Equal(t, "application/javascript; charset=utf-8", resp.Header.Get("Content-Type"))
+		require.Empty(t, resp.Header.Get("X-Content-Type-Options"))
+		body, _ := io.ReadAll(resp.Body)
+		require.Equal(t, "export const hi = 1;", string(body))
+	})
+
+	t.Run("SiblingCssServedAsCss", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body></body></html>",
+			"style.css":  "body { color: red; }",
+		})
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site/style.css", nil, 200)
+		require.Equal(t, "text/css; charset=utf-8", resp.Header.Get("Content-Type"))
+	})
+
+	t.Run("NoHtmlFile404", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
 			"readme.txt": "plain text",
 		})
-		s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 404)
+		s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 404)
 	})
 
 	t.Run("FirstHtmlFileWins", func(t *testing.T) {
-		user, id := createHtmlGist(t, "0", map[string]string{
+		user, id := createSiteGist(t, "0", map[string]string{
 			"a.html": "<!DOCTYPE html><html><body>A</body></html>",
 			"b.html": "<!DOCTYPE html><html><body>B</body></html>",
 		})
-		resp := s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 200)
+		resp := s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 200)
 		body, _ := io.ReadAll(resp.Body)
 		require.Contains(t, string(body), "A")
 		require.NotContains(t, string(body), "B")
 	})
 
+	t.Run("MissingSiblingFile404", func(t *testing.T) {
+		user, id := createSiteGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body></body></html>",
+		})
+		s.Request(t, "GET", "/"+user+"/"+id+"/site/missing.js", nil, 404)
+	})
+
 	t.Run("PrivateGistOwner", func(t *testing.T) {
-		user, id := createHtmlGist(t, "2", map[string]string{
+		user, id := createSiteGist(t, "2", map[string]string{
 			"index.html": "<!DOCTYPE html><html><body>private</body></html>",
 		})
-		// Stranger: 404
 		s.Login(t, "alice")
-		s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 404)
-		// Owner: 200
+		s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 404)
 		s.Login(t, "thomas")
-		s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 200)
+		s.Request(t, "GET", "/"+user+"/"+id+"/site", nil, 200)
 		s.Logout()
 	})
 
 	t.Run("PrivateGistAccessToken", func(t *testing.T) {
-		user, id := createHtmlGist(t, "2", map[string]string{
+		user, id := createSiteGist(t, "2", map[string]string{
 			"index.html": "<!DOCTYPE html><html><body>private</body></html>",
 		})
 		owner, err := db.GetUserByUsername(user)
 		require.NoError(t, err)
-		tok := &db.AccessToken{Name: "html", UserID: owner.ID, ScopeGist: db.ReadPermission}
+		tok := &db.AccessToken{Name: "site", UserID: owner.ID, ScopeGist: db.ReadPermission}
 		plain, err := tok.GenerateToken()
 		require.NoError(t, err)
 		require.NoError(t, tok.Create())
-
-		resp := s.RequestWithHeaders(t, "GET", "/"+user+"/"+id+".html", nil, 200,
+		resp := s.RequestWithHeaders(t, "GET", "/"+user+"/"+id+"/site", nil, 200,
 			map[string]string{"Authorization": "Token " + plain})
 		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
 	})

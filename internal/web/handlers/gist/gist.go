@@ -6,7 +6,9 @@ import (
 	gojson "encoding/json"
 	"fmt"
 	"html/template"
+	"mime"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,8 +44,6 @@ func GistIndex(ctx *context.Context) error {
 		return GistJs(ctx)
 	} else if ctx.GetData("gistpage") == "json" {
 		return GistJson(ctx)
-	} else if ctx.GetData("gistpage") == "html" {
-		return GistHtml(ctx)
 	}
 
 	gist := ctx.GetData("gist").(*db.Gist)
@@ -177,32 +177,73 @@ func GistJs(ctx *context.Context) error {
 	return ctx.PlainText(200, js)
 }
 
-// GistHtml serves the first HTML file in the gist as text/html, without the
-// X-Content-Type-Options: nosniff header, so browsers render it. Visibility
-// rules follow the gistInit middleware — private gists already 404 here
-// unless the requester is the owner or holds a valid access token.
-func GistHtml(ctx *context.Context) error {
+// GistSite serves the gist as a mini-site so relative paths between sibling
+// files just work. With no file name it returns the first .html file; with a
+// file name it returns that file with its real Content-Type. The
+// X-Content-Type-Options: nosniff header is dropped so HTML executes and ES
+// modules / stylesheets load. Visibility rules follow gistInit.
+func GistSite(ctx *context.Context) error {
 	gist := ctx.GetData("gist").(*db.Gist)
+	filename := ctx.Param("*")
 
-	files, _, err := gist.Files("HEAD", false)
-	if err != nil {
-		return ctx.ErrorRes(500, "Error fetching files", err)
-	}
-
-	var htmlFile *git.File
-	for _, f := range files {
-		if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
-			htmlFile = f
-			break
+	if filename == "" || strings.HasSuffix(filename, "/") {
+		files, _, err := gist.Files("HEAD", false)
+		if err != nil {
+			return ctx.ErrorRes(500, "Error fetching files", err)
 		}
-	}
-	if htmlFile == nil {
+		for _, f := range files {
+			if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
+				return writeSiteFile(ctx, f)
+			}
+		}
 		return ctx.NotFound("No HTML file found in this gist")
 	}
 
+	file, err := gist.File("HEAD", filename, false)
+	if err != nil {
+		return ctx.ErrorRes(500, "Error getting file content", err)
+	}
+	if file == nil {
+		return ctx.NotFound("File not found")
+	}
+	return writeSiteFile(ctx, file)
+}
+
+func writeSiteFile(ctx *context.Context, file *git.File) error {
 	ctx.Response().Header().Del("X-Content-Type-Options")
-	ctx.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
-	return ctx.PlainText(200, htmlFile.Content)
+	ctx.Response().Header().Set("Content-Type", siteContentType(file))
+	return ctx.PlainText(200, file.Content)
+}
+
+// siteContentType picks a real Content-Type for a gist file served at /site/.
+// It prefers the file extension (so .js gets application/javascript, not
+// text/plain), and falls back to the detected MIME for files without a
+// known extension.
+func siteContentType(file *git.File) string {
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	switch ext {
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".js", ".mjs":
+		return "application/javascript; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".wasm":
+		return "application/wasm"
+	case ".map":
+		return "application/json; charset=utf-8"
+	}
+	if mt := mime.TypeByExtension(ext); mt != "" {
+		return mt
+	}
+	if file.MimeType.ContentType != "" {
+		return file.MimeType.ContentType
+	}
+	return "application/octet-stream"
 }
 
 func Preview(ctx *context.Context) error {

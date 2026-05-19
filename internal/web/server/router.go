@@ -137,6 +137,8 @@ func (s *Server) registerRoutes() {
 			sC.POST("/comments", gist.CommentCreate, logged)
 			sC.POST("/comments/:id/edit", gist.CommentEdit, logged)
 			sC.POST("/comments/:id/delete", gist.CommentDelete, logged)
+			sC.GET("/site", gist.GistSite)
+			sC.GET("/site/*", gist.GistSite)
 		}
 	}
 
