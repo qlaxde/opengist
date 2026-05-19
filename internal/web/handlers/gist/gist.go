@@ -5,6 +5,7 @@ import (
 	"bytes"
 	gojson "encoding/json"
 	"fmt"
+	"html/template"
 	"net/url"
 	"strings"
 	"time"
@@ -14,6 +15,27 @@ import (
 	"github.com/thomiceli/opengist/internal/render"
 	"github.com/thomiceli/opengist/internal/web/context"
 )
+
+type renderedComment struct {
+	*db.GistComment
+	HTML template.HTML
+}
+
+func loadRenderedComments(gistID uint) ([]renderedComment, error) {
+	comments, err := db.GetCommentsByGistID(gistID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]renderedComment, len(comments))
+	for i, c := range comments {
+		html, err := render.MarkdownString(c.Content)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = renderedComment{GistComment: c, HTML: template.HTML(html)}
+	}
+	return out, nil
+}
 
 func GistIndex(ctx *context.Context) error {
 	if ctx.GetData("gistpage") == "js" {
@@ -39,6 +61,18 @@ func GistIndex(ctx *context.Context) error {
 	}
 
 	renderedFiles := render.RenderFiles(files)
+
+	comments, err := loadRenderedComments(gist.ID)
+	if err != nil {
+		return ctx.ErrorRes(500, "Error loading comments", err)
+	}
+	ctx.SetData("comments", comments)
+	if u := ctx.User; u != nil {
+		ctx.SetData("canComment", true)
+		ctx.SetData("isGistOwner", u.ID == gist.UserID)
+		ctx.SetData("viewerID", u.ID)
+		ctx.SetData("viewerIsAdmin", u.IsAdmin)
+	}
 
 	ctx.SetData("page", "code")
 	ctx.SetData("commit", revision)
