@@ -37,6 +37,41 @@ func TryAuthentication(username, password string) (*db.User, error) {
 	}
 }
 
+// TryAuthenticationForGit authenticates a git HTTP request. It accepts the same
+// credentials as TryAuthentication (DB password, LDAP), and additionally accepts
+// a personal access token in the password field — provided the token's scope
+// covers the operation (read for pull, write for push).
+func TryAuthenticationForGit(username, password string, write bool) (*db.User, error) {
+	user, err := db.GetUserByUsername(username)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Error().Err(err).Msgf("Cannot get user by username %s", username)
+		return nil, err
+	}
+
+	if user.Password != "" {
+		return tryDbLogin(user, password)
+	}
+	if ldap.Enabled() {
+		if u, lerr := tryLdapLogin(username, password); lerr == nil {
+			return u, nil
+		}
+	}
+
+	token, err := db.GetAccessTokenByToken(password)
+	if err != nil || token.User.Username != username || token.IsExpired() {
+		return nil, AuthError{"invalid credentials"}
+	}
+	if write && !token.HasGistWritePermission() {
+		return nil, AuthError{"access token lacks write permission"}
+	}
+	if !write && !token.HasGistReadPermission() {
+		return nil, AuthError{"access token lacks read permission"}
+	}
+	_ = token.UpdateLastUsed()
+	return &token.User, nil
+}
+
+
 func tryDbLogin(user *db.User, password string) (*db.User, error) {
 	if ok, err := passwordpkg.VerifyPassword(password, user.Password); !ok {
 		if err != nil {

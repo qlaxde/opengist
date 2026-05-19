@@ -88,7 +88,7 @@ func GitHttp(ctx *context.Context) error {
 		var user *db.User
 
 		// check if the user has a valid account on opengist to push a gist
-		user, err = auth.TryAuthentication(authUsername, authPassword)
+		user, err = auth.TryAuthenticationForGit(authUsername, authPassword, true)
 		if err != nil {
 			var authErr auth.AuthError
 			if errors.As(err, &authErr) {
@@ -142,7 +142,7 @@ func GitHttp(ctx *context.Context) error {
 			userToCheckPermissions = gist.User.Username
 		}
 
-		if _, err = auth.TryAuthentication(userToCheckPermissions, authPassword); err != nil {
+		if _, err = auth.TryAuthenticationForGit(userToCheckPermissions, authPassword, false); err != nil {
 			var authErr auth.AuthError
 			if errors.As(err, &authErr) {
 				log.Warn().Msg("Invalid HTTP authentication attempt from " + ctx.RealIP())
@@ -160,7 +160,7 @@ func GitHttp(ctx *context.Context) error {
 		// if gist exists, check if the credentials are valid and if the user is the gist owner
 		if gistExists {
 			log.Debug().Str("authUsername", authUsername).Str("gistOwner", gist.User.Username).Msg("Pushing to existing gist")
-			if _, err = auth.TryAuthentication(gist.User.Username, authPassword); err != nil {
+			if _, err = auth.TryAuthenticationForGit(gist.User.Username, authPassword, true); err != nil {
 				var authErr auth.AuthError
 				if errors.As(err, &authErr) {
 					log.Warn().Msg("Invalid HTTP authentication attempt from " + ctx.RealIP())
@@ -174,7 +174,7 @@ func GitHttp(ctx *context.Context) error {
 		} else { // if the gist does not exist, check if the user has a valid account on opengist to push a gist and create it
 			log.Debug().Str("authUsername", authUsername).Msg("Creating new gist by pushing")
 			var user *db.User
-			if user, err = auth.TryAuthentication(authUsername, authPassword); err != nil {
+			if user, err = auth.TryAuthenticationForGit(authUsername, authPassword, true); err != nil {
 				var authErr auth.AuthError
 				if errors.As(err, &authErr) {
 					log.Warn().Msg("Invalid HTTP authentication attempt from " + ctx.RealIP())
