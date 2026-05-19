@@ -387,6 +387,9 @@ func gistInit(next Handler) Handler {
 		case ".git":
 			ctx.SetData("gistpage", "git")
 			gistName = strings.TrimSuffix(gistName, ".git")
+		case ".html":
+			ctx.SetData("gistpage", "html")
+			gistName = strings.TrimSuffix(gistName, ".html")
 		}
 
 		gist, err := db.GetGist(userName, gistName)

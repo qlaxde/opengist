@@ -6,6 +6,7 @@ import (
 	gojson "encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/thomiceli/opengist/internal/db"
@@ -19,6 +20,8 @@ func GistIndex(ctx *context.Context) error {
 		return GistJs(ctx)
 	} else if ctx.GetData("gistpage") == "json" {
 		return GistJson(ctx)
+	} else if ctx.GetData("gistpage") == "html" {
+		return GistHtml(ctx)
 	}
 
 	gist := ctx.GetData("gist").(*db.Gist)
@@ -138,6 +141,34 @@ func GistJs(ctx *context.Context) error {
 	}
 	ctx.Response().Header().Set("Content-Type", "text/javascript")
 	return ctx.PlainText(200, js)
+}
+
+// GistHtml serves the first HTML file in the gist as text/html, without the
+// X-Content-Type-Options: nosniff header, so browsers render it. Visibility
+// rules follow the gistInit middleware — private gists already 404 here
+// unless the requester is the owner or holds a valid access token.
+func GistHtml(ctx *context.Context) error {
+	gist := ctx.GetData("gist").(*db.Gist)
+
+	files, _, err := gist.Files("HEAD", false)
+	if err != nil {
+		return ctx.ErrorRes(500, "Error fetching files", err)
+	}
+
+	var htmlFile *git.File
+	for _, f := range files {
+		if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
+			htmlFile = f
+			break
+		}
+	}
+	if htmlFile == nil {
+		return ctx.NotFound("No HTML file found in this gist")
+	}
+
+	ctx.Response().Header().Del("X-Content-Type-Options")
+	ctx.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
+	return ctx.PlainText(200, htmlFile.Content)
 }
 
 func Preview(ctx *context.Context) error {

@@ -4,9 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/thomiceli/opengist/internal/db"
 	webtest "github.com/thomiceli/opengist/internal/web/test"
 )
 
@@ -89,6 +92,89 @@ func TestRawFile(t *testing.T) {
 		_, _, username, identifier := s.CreateGist(t, "2")
 
 		s.Request(t, "GET", "/"+username+"/"+identifier+"/raw/HEAD/file.txt", nil, 404)
+	})
+}
+
+func TestGistHtml(t *testing.T) {
+	s := webtest.Setup(t)
+	defer webtest.Teardown(t)
+
+	s.Register(t, "thomas")
+	s.Register(t, "alice")
+
+	createHtmlGist := func(t *testing.T, visibility string, files map[string]string) (string, string) {
+		s.Login(t, "thomas")
+		form := url.Values{
+			"title":   {"HTML"},
+			"private": {visibility},
+		}
+		for name, content := range files {
+			form.Add("name", name)
+			form.Add("content", content)
+		}
+		resp := s.Request(t, "POST", "/", form, 302)
+		parts := strings.Split(strings.TrimPrefix(resp.Header.Get("Location"), "/"), "/")
+		require.Len(t, parts, 2)
+		s.Logout()
+		return parts[0], parts[1]
+	}
+
+	t.Run("PublicGist", func(t *testing.T) {
+		user, id := createHtmlGist(t, "0", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body><h1>hello</h1></body></html>",
+		})
+		resp := s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 200)
+		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
+		require.Empty(t, resp.Header.Get("X-Content-Type-Options"))
+		body, _ := io.ReadAll(resp.Body)
+		require.Contains(t, string(body), "<h1>hello</h1>")
+	})
+
+	t.Run("NoHtmlFile", func(t *testing.T) {
+		user, id := createHtmlGist(t, "0", map[string]string{
+			"readme.txt": "plain text",
+		})
+		s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 404)
+	})
+
+	t.Run("FirstHtmlFileWins", func(t *testing.T) {
+		user, id := createHtmlGist(t, "0", map[string]string{
+			"a.html": "<!DOCTYPE html><html><body>A</body></html>",
+			"b.html": "<!DOCTYPE html><html><body>B</body></html>",
+		})
+		resp := s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 200)
+		body, _ := io.ReadAll(resp.Body)
+		require.Contains(t, string(body), "A")
+		require.NotContains(t, string(body), "B")
+	})
+
+	t.Run("PrivateGistOwner", func(t *testing.T) {
+		user, id := createHtmlGist(t, "2", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body>private</body></html>",
+		})
+		// Stranger: 404
+		s.Login(t, "alice")
+		s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 404)
+		// Owner: 200
+		s.Login(t, "thomas")
+		s.Request(t, "GET", "/"+user+"/"+id+".html", nil, 200)
+		s.Logout()
+	})
+
+	t.Run("PrivateGistAccessToken", func(t *testing.T) {
+		user, id := createHtmlGist(t, "2", map[string]string{
+			"index.html": "<!DOCTYPE html><html><body>private</body></html>",
+		})
+		owner, err := db.GetUserByUsername(user)
+		require.NoError(t, err)
+		tok := &db.AccessToken{Name: "html", UserID: owner.ID, ScopeGist: db.ReadPermission}
+		plain, err := tok.GenerateToken()
+		require.NoError(t, err)
+		require.NoError(t, tok.Create())
+
+		resp := s.RequestWithHeaders(t, "GET", "/"+user+"/"+id+".html", nil, 200,
+			map[string]string{"Authorization": "Token " + plain})
+		require.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"))
 	})
 }
 
