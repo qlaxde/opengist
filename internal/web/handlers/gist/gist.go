@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,66 @@ import (
 	"github.com/thomiceli/opengist/internal/render"
 	"github.com/thomiceli/opengist/internal/web/context"
 )
+
+// fileTreeRow is one entry rendered in the gist-page sidebar. Filename is the
+// full path of the leaf (empty for directory rows); the template uses it to
+// build the #file-<slug> anchor that the file cards already declare.
+type fileTreeRow struct {
+	Name     string
+	Filename string
+	Depth    int
+	IsDir    bool
+}
+
+func buildFileTree(files []*git.File) []fileTreeRow {
+	type node struct {
+		children map[string]*node
+		isLeaf   bool
+		full     string
+	}
+	root := &node{children: map[string]*node{}}
+	for _, f := range files {
+		parts := strings.Split(f.Filename, "/")
+		cur := root
+		for i, p := range parts {
+			if cur.children[p] == nil {
+				cur.children[p] = &node{children: map[string]*node{}}
+			}
+			cur = cur.children[p]
+			if i == len(parts)-1 {
+				cur.isLeaf = true
+				cur.full = f.Filename
+			}
+		}
+	}
+
+	var rows []fileTreeRow
+	var walk func(n *node, depth int)
+	walk = func(n *node, depth int) {
+		keys := make([]string, 0, len(n.children))
+		for k := range n.children {
+			keys = append(keys, k)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			a, b := n.children[keys[i]], n.children[keys[j]]
+			if a.isLeaf != b.isLeaf {
+				return !a.isLeaf // directories first
+			}
+			return strings.ToLower(keys[i]) < strings.ToLower(keys[j])
+		})
+		for _, k := range keys {
+			child := n.children[k]
+			if child.isLeaf {
+				rows = append(rows, fileTreeRow{Name: k, Filename: child.full, Depth: depth})
+			} else {
+				rows = append(rows, fileTreeRow{Name: k, Depth: depth, IsDir: true})
+				walk(child, depth+1)
+			}
+		}
+	}
+	walk(root, 0)
+	return rows
+}
 
 type renderedComment struct {
 	*db.GistComment
@@ -70,6 +131,7 @@ func GistIndex(ctx *context.Context) error {
 		}
 	}
 	ctx.SetData("hasHtmlFile", hasHtmlFile)
+	ctx.SetData("fileTree", buildFileTree(files))
 
 	comments, err := loadRenderedComments(gist.ID)
 	if err != nil {
