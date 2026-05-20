@@ -116,6 +116,16 @@ func (s *Server) registerRoutes() {
 
 		r.GET("/topics/:topic", gist.AllGists, checkRequireLogin, setAllGistsMode("topics"))
 
+		// JSON API surface (PAT-authenticated). Kept tiny on purpose:
+		// metadata read/write per gist + topic list per user. Used by the
+		// gist-push skill to set visibility/tags after a git push.
+		apiTopics := r.SubGroup("/api")
+		apiTopics.GET("/topics", gist.APIListTopics, tokenAuthRequired(false))
+
+		apiGist := r.SubGroup("/api/gists/:user/:gistname")
+		apiGist.GET("/metadata", gist.APIGetMetadata, tokenAuthRequired(false), gistInit)
+		apiGist.POST("/metadata", gist.APIUpdateMetadata, tokenAuthRequired(true), gistInit, writePermission)
+
 		sC := r.SubGroup("/:user/:gistname")
 		{
 			sC.Use(makeCheckRequireLogin(true), gistInit)

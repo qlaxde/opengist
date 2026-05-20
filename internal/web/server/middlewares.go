@@ -337,6 +337,37 @@ func loadSettings(ctx *context.Context) error {
 	return nil
 }
 
+// tokenAuthRequired authenticates the request via a PAT in the Authorization
+// header (`Token <pat>`) and sets ctx.User accordingly. Used by the JSON API
+// surface where session/cookie auth is impractical. write=true requires the
+// token to have gist-write scope, otherwise read scope is sufficient.
+func tokenAuthRequired(write bool) Middleware {
+	return func(next Handler) Handler {
+		return func(ctx *context.Context) error {
+			authHeader := ctx.Request().Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Token ") {
+				return ctx.ErrorRes(401, "missing Token authorization", nil)
+			}
+			plainToken := strings.TrimPrefix(authHeader, "Token ")
+			tok, err := db.GetAccessTokenByToken(plainToken)
+			if err != nil || tok.IsExpired() {
+				return ctx.ErrorRes(401, "invalid or expired token", err)
+			}
+			if write {
+				if !tok.HasGistWritePermission() {
+					return ctx.ErrorRes(403, "token lacks gist write scope", nil)
+				}
+			} else if !tok.HasGistReadPermission() {
+				return ctx.ErrorRes(403, "token lacks gist read scope", nil)
+			}
+			_ = tok.UpdateLastUsed()
+			ctx.User = &tok.User
+			ctx.SetData("userLogged", &tok.User)
+			return next(ctx)
+		}
+	}
+}
+
 // getUserByToken checks the Authorization header for token-based auth.
 // Expects format: Authorization: Token <token>
 // Returns the user if the token is valid and has gist read permission, nil otherwise.
