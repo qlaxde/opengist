@@ -331,7 +331,11 @@ func (gist *Gist) Update() error {
 }
 
 func (gist *Gist) UpdateNoTimestamps() error {
-	return db.Omit("forked_id", "updated_at").Save(&gist).Error
+	// Omit the Topics association: this method only persists scalar columns,
+	// and gist.Topics is usually a stale preload. Letting Save cascade it
+	// would re-insert old topic rows (additive). Topic writes go through
+	// ReplaceGistTopics / Update() instead.
+	return db.Omit("forked_id", "updated_at", "Topics").Save(&gist).Error
 }
 
 func (gist *Gist) Delete() error {
