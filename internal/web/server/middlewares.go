@@ -70,7 +70,14 @@ func (s *Server) registerMiddlewares() {
 			/* skip CSRF for git clients */
 			matchUploadPack, _ := regexp.MatchString("(.*?)/git-upload-pack$", ctx.Request().URL.Path)
 			matchReceivePack, _ := regexp.MatchString("(.*?)/git-receive-pack$", ctx.Request().URL.Path)
-			return (filepath.Ext(gistName) == ".js" && ctx.Request().Method == "GET") || matchUploadPack || matchReceivePack
+
+			/* skip CSRF for the PAT-authenticated JSON API: these routes
+			   carry no session cookie, so CSRF offers no protection and
+			   only blocks legitimate token requests */
+			matchApi := strings.HasPrefix(ctx.Request().URL.Path, "/api/") &&
+				strings.HasPrefix(ctx.Request().Header.Get("Authorization"), "Token ")
+
+			return (filepath.Ext(gistName) == ".js" && ctx.Request().Method == "GET") || matchUploadPack || matchReceivePack || matchApi
 		},
 		ErrorHandler: func(err error, c echo.Context) error {
 			log.Info().Err(err).Msg("CSRF error")
@@ -85,7 +92,8 @@ func (s *Server) errorHandler(err error, ctx echo.Context) {
 	var httpErr *echo.HTTPError
 	data := ctx.Request().Context().Value(context.DataKeyStr).(echo.Map)
 	if errors.As(err, &httpErr) {
-		acceptJson := strings.Contains(ctx.Request().Header.Get("Accept"), "application/json")
+		acceptJson := strings.Contains(ctx.Request().Header.Get("Accept"), "application/json") ||
+			strings.HasPrefix(ctx.Request().URL.Path, "/api/")
 		data["error"] = err
 		if acceptJson {
 			if err := ctx.JSON(httpErr.Code, httpErr); err != nil {
