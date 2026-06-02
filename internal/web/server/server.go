@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/thomiceli/opengist/internal/config"
 	"github.com/thomiceli/opengist/internal/i18n"
+	"github.com/thomiceli/opengist/internal/web/siteroute"
 )
 
 type Server struct {
@@ -45,6 +46,13 @@ func NewServer(isDev bool) *Server {
 	}
 
 	s.registerRoutes()
+
+	// Load the site routing table snapshot. Fail-soft: an error leaves the
+	// snapshot empty (nil), so site-routing is simply inactive until the next
+	// successful admin write triggers a reload.
+	if err := siteroute.Reload(); err != nil {
+		log.Warn().Err(err).Msg("Failed to load site routing table; site routing disabled until next reload")
+	}
 
 	return s
 }

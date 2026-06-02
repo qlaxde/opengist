@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"mime"
 	"net/url"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -264,16 +265,31 @@ func GistSite(ctx *context.Context) error {
 	pinned := revision != "HEAD"
 
 	if filename == "" || strings.HasSuffix(filename, "/") {
-		files, _, err := gist.Files(revision, false)
+		// Prefer an index.html at this directory level (root: "index.html").
+		index, err := gist.File(revision, filename+"index.html", false)
 		if err != nil {
 			if _, ok := err.(*git.RevisionNotFoundError); ok {
 				return ctx.NotFound("Revision not found")
 			}
-			return ctx.ErrorRes(500, "Error fetching files", err)
+			return ctx.ErrorRes(500, "Error getting file content", err)
 		}
-		for _, f := range files {
-			if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
-				return writeSiteFile(ctx, f, pinned)
+		if index != nil {
+			return writeSiteFile(ctx, index, pinned)
+		}
+
+		// At the root only, fall back to the first .html file in the gist.
+		if filename == "" {
+			files, _, err := gist.Files(revision, false)
+			if err != nil {
+				if _, ok := err.(*git.RevisionNotFoundError); ok {
+					return ctx.NotFound("Revision not found")
+				}
+				return ctx.ErrorRes(500, "Error fetching files", err)
+			}
+			for _, f := range files {
+				if strings.HasSuffix(strings.ToLower(f.Filename), ".html") {
+					return writeSiteFile(ctx, f, pinned)
+				}
 			}
 		}
 		return ctx.NotFound("No HTML file found in this gist")
@@ -287,6 +303,17 @@ func GistSite(ctx *context.Context) error {
 		return ctx.ErrorRes(500, "Error getting file content", err)
 	}
 	if file == nil {
+		// Pretty-URL fallback: /about → about.html, /docs → docs/index.html.
+		// Only probe when the last path segment has no extension, so a genuine
+		// asset miss (e.g. /styles.css) stays a clean 404 with no .html guess.
+		if !strings.Contains(path.Base(filename), ".") {
+			if f, _ := gist.File(revision, filename+".html", false); f != nil {
+				return writeSiteFile(ctx, f, pinned)
+			}
+			if f, _ := gist.File(revision, strings.TrimSuffix(filename, "/")+"/index.html", false); f != nil {
+				return writeSiteFile(ctx, f, pinned)
+			}
+		}
 		return ctx.NotFound("File not found")
 	}
 	return writeSiteFile(ctx, file, pinned)
@@ -353,6 +380,18 @@ func writeSiteFile(ctx *context.Context, file *git.File, pinned bool) error {
 }
 
 func siteBaseHref(ctx *context.Context, pinned bool) string {
+	// When the request arrived via a site route (host rewrite), relative links
+	// must resolve against the external host's path space, not the internal
+	// /<user>/<gist>/site/ URL. The revision pin deliberately stays out of the
+	// base href so external links remain clean.
+	if matched, _ := ctx.Get("siteRouteMatched").(bool); matched {
+		prefix, _ := ctx.Get("siteRoutePrefix").(string)
+		if prefix == "" {
+			return "/"
+		}
+		return prefix + "/"
+	}
+
 	gist := ctx.GetData("gist").(*db.Gist)
 	base := "/" + gist.User.Username + "/" + gist.Identifier() + "/site/"
 	if pinned {

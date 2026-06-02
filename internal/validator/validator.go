@@ -17,6 +17,9 @@ func NewValidator() *OpengistValidator {
 	_ = v.RegisterValidation("alphanumdash", validateAlphaNumDash)
 	_ = v.RegisterValidation("alphanumdashorempty", validateAlphaNumDashOrEmpty)
 	_ = v.RegisterValidation("gisttopics", validateGistTopics)
+	_ = v.RegisterValidation("sitehost", validateSiteHost)
+	_ = v.RegisterValidation("siteprefix", validateSitePrefix)
+	_ = v.RegisterValidation("siterevision", validateSiteRevision)
 	return &OpengistValidator{v}
 }
 
@@ -49,6 +52,8 @@ func ValidationMessages(err *error, locale *i18n.Locale) string {
 			messages[i] = locale.String("validation.invalid", e.Field())
 		case "gisttopics":
 			messages[i] = locale.String("validation.invalid-gist-topics")
+		case "sitehost", "siteprefix", "siterevision":
+			messages[i] = locale.String("validation.invalid", e.Field())
 		}
 	}
 
@@ -98,4 +103,25 @@ func validateGistTopics(fl validator.FieldLevel) bool {
 	}
 
 	return true
+}
+
+// validateSiteHost accepts a bare lowercase hostname: dot-separated labels of
+// alphanumerics and hyphens, no scheme, port, path or trailing dot.
+func validateSiteHost(fl validator.FieldLevel) bool {
+	host := fl.Field().String()
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	return regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`).MatchString(host)
+}
+
+// validateSitePrefix accepts "" (root) or one or more "/segment" parts, where a
+// segment is alphanumerics, dot, underscore or hyphen. No trailing slash.
+func validateSitePrefix(fl validator.FieldLevel) bool {
+	return regexp.MustCompile(`^$|^(/[A-Za-z0-9._-]+)+$`).MatchString(fl.Field().String())
+}
+
+// validateSiteRevision accepts "" (HEAD), the literal HEAD, or a hex commit hash.
+func validateSiteRevision(fl validator.FieldLevel) bool {
+	return regexp.MustCompile(`^$|^(?i:HEAD)$|^[0-9a-fA-F]{4,64}$`).MatchString(fl.Field().String())
 }

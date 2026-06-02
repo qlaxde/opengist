@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/thomiceli/opengist/internal/i18n"
 	"github.com/thomiceli/opengist/internal/web/context"
 	"github.com/thomiceli/opengist/internal/web/handlers"
+	"github.com/thomiceli/opengist/internal/web/siteroute"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -45,6 +47,7 @@ func (s *Server) registerMiddlewares() {
 		Getter: middleware.MethodFromForm("_method"),
 	}))
 	s.echo.Pre(middleware.RemoveTrailingSlash())
+	s.echo.Pre(hostSiteRewrite())
 	s.echo.Pre(middleware.CORS())
 	s.echo.Pre(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogURI: true, LogStatus: true, LogMethod: true,
@@ -242,6 +245,77 @@ func makeCheckRequireLogin(isSingleGistAccess bool) Middleware {
 
 func checkRequireLogin(next Handler) Handler {
 	return makeCheckRequireLogin(false)(next)
+}
+
+// hostSiteRewrite is a Pre middleware that maps an external host (+ optional
+// path prefix) onto the existing /<user>/<gist>/site route, using the
+// admin-managed site routing table. It rewrites the request path in place; the
+// regular gistAnonymousGate → gistInit → GistSite chain then serves it, so the
+// public_site visibility gate enforces auth for free and write routes (/edit,
+// etc.) are unreachable by construction (the rewrite always injects /site/).
+//
+// It runs on a raw echo.Context (Pre runs before the *context.Context wrapper
+// and before routing); the matched-route signals are stashed with c.Set, which
+// the wrapped context exposes via ctx.Get in GistSite.
+func hostSiteRewrite() echo.MiddlewareFunc {
+	extHost := externalUrlHost()
+
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			host := stripPort(req.Host)
+
+			// Never shadow the canonical instance host: the admin panel, login,
+			// and the normal gist UI must keep working there.
+			if extHost != "" && host == extHost {
+				return next(c)
+			}
+
+			m, ok := siteroute.Resolve(host, req.URL.Path)
+			if !ok {
+				return next(c)
+			}
+
+			rest := strings.TrimPrefix(req.URL.Path, m.Prefix)
+			rest = strings.TrimPrefix(rest, "/")
+
+			target := "/" + m.User + "/" + m.Slug + "/site"
+			if m.Revision != "" {
+				target += "/@" + m.Revision
+			}
+			if rest != "" {
+				target += "/" + rest
+			}
+
+			c.Set("siteRouteMatched", true)
+			c.Set("siteRoutePrefix", m.Prefix)
+			req.URL.Path = target
+			req.RequestURI = target
+
+			return next(c)
+		}
+	}
+}
+
+// externalUrlHost returns the lowercased hostname (no port) of the configured
+// canonical ExternalUrl, or "" if unset/unparseable.
+func externalUrlHost() string {
+	if config.C.ExternalUrl == "" {
+		return ""
+	}
+	u, err := url.Parse(config.C.ExternalUrl)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+func stripPort(host string) string {
+	host = strings.ToLower(host)
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	return host
 }
 
 // gistAnonymousGate runs before gistInit and decides whether an unauthenticated
