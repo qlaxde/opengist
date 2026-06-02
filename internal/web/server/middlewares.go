@@ -187,6 +187,19 @@ func adminPermission(next Handler) Handler {
 	}
 }
 
+// adminRequired gates instance-level API routes on admin privileges. Unlike
+// adminPermission (which 404s to hide the admin panel from the browser), it
+// returns a 403 since the caller is authenticated tooling. Use it after
+// tokenAuthRequired, which populates ctx.User from the access token.
+func adminRequired(next Handler) Handler {
+	return func(ctx *context.Context) error {
+		if ctx.User == nil || !ctx.User.IsAdmin {
+			return ctx.ErrorRes(403, "admin privileges required", nil)
+		}
+		return next(ctx)
+	}
+}
+
 func logged(next Handler) Handler {
 	return func(ctx *context.Context) error {
 		user := ctx.User

@@ -1,10 +1,12 @@
 package gist_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,6 +21,122 @@ func readBody(t *testing.T, r *http.Response) string {
 	b, err := io.ReadAll(r.Body)
 	require.NoError(t, err)
 	return string(b)
+}
+
+// apiReq issues a PAT-authenticated JSON request (no session cookie).
+func apiReq(t *testing.T, s *webtest.Server, method, path, token, jsonBody string, expected int) *http.Response {
+	t.Helper()
+	var body io.Reader
+	if jsonBody != "" {
+		body = strings.NewReader(jsonBody)
+	}
+	req := httptest.NewRequest(method, path, body)
+	if token != "" {
+		req.Header.Set("Authorization", "Token "+token)
+	}
+	if jsonBody != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json")
+	return s.RawRequest(t, req, expected)
+}
+
+// mintToken creates a gist read+write access token for the named user.
+func mintToken(t *testing.T, username string) string {
+	t.Helper()
+	user, err := db.GetUserByUsername(username)
+	require.NoError(t, err)
+	tok := &db.AccessToken{Name: "test", UserID: user.ID, ScopeGist: 2}
+	plain, err := tok.GenerateToken()
+	require.NoError(t, err)
+	require.NoError(t, tok.Create())
+	return plain
+}
+
+func TestSiteRoutesAPI(t *testing.T) {
+	s := webtest.Setup(t)
+	defer webtest.Teardown(t)
+
+	s.Register(t, "thomas") // first user is admin
+
+	// public_site gist to target.
+	s.Login(t, "thomas")
+	resp := s.Request(t, "POST", "/", url.Values{
+		"title":   {"Site"},
+		"name":    {"index.html"},
+		"content": {"<!DOCTYPE html><html><head></head><body><h1>api</h1></body></html>"},
+		"private": {"4"},
+	}, 302)
+	parts := strings.Split(strings.TrimPrefix(resp.Header.Get("Location"), "/"), "/")
+	user, siteId := parts[0], parts[1]
+
+	// Internal gist (no anonymous access) to reject.
+	resp = s.Request(t, "POST", "/", url.Values{
+		"title": {"Internal"}, "name": {"index.html"},
+		"content": {"<html></html>"}, "private": {"0"},
+	}, 302)
+	internalId := strings.Split(strings.TrimPrefix(resp.Header.Get("Location"), "/"), "/")[1]
+	s.Logout()
+
+	adminToken := mintToken(t, "thomas")
+
+	t.Run("RequiresToken", func(t *testing.T) {
+		apiReq(t, s, "GET", "/api/site-routes", "", "", 401)
+	})
+
+	t.Run("NonAdminForbidden", func(t *testing.T) {
+		s.Request(t, "POST", "/register", db.UserDTO{Username: "bob", Password: "bobbob12"}, 302)
+		s.Logout()
+		bobToken := mintToken(t, "bob")
+		apiReq(t, s, "GET", "/api/site-routes", bobToken, "", 403)
+		apiReq(t, s, "POST", "/api/site-routes", bobToken,
+			`{"host":"bob.test","user":"`+user+`","slug":"`+siteId+`"}`, 403)
+	})
+
+	t.Run("RejectsNonPublicGist", func(t *testing.T) {
+		apiReq(t, s, "POST", "/api/site-routes", adminToken,
+			`{"host":"reject.test","user":"`+user+`","slug":"`+internalId+`"}`, 422)
+	})
+
+	t.Run("RejectsBadHost", func(t *testing.T) {
+		apiReq(t, s, "POST", "/api/site-routes", adminToken,
+			`{"host":"http://nope/","user":"`+user+`","slug":"`+siteId+`"}`, 400)
+	})
+
+	var createdID float64
+	t.Run("CreateThenResolve", func(t *testing.T) {
+		r := apiReq(t, s, "POST", "/api/site-routes", adminToken,
+			`{"host":"api.test","path_prefix":"/docs","user":"`+user+`","slug":"`+siteId+`","revision":""}`, 201)
+		var out map[string]any
+		require.NoError(t, json.Unmarshal([]byte(readBody(t, r)), &out))
+		require.Equal(t, "api.test", out["host"])
+		require.Equal(t, "/docs", out["path_prefix"])
+		require.Equal(t, true, out["enabled"])
+		createdID = out["id"].(float64)
+
+		// The resolver picked up the new route (Reload ran).
+		m, ok := siteroute.Resolve("api.test", "/docs/x")
+		require.True(t, ok)
+		require.Equal(t, siteId, m.Slug)
+	})
+
+	t.Run("DuplicateConflicts", func(t *testing.T) {
+		apiReq(t, s, "POST", "/api/site-routes", adminToken,
+			`{"host":"api.test","path_prefix":"/docs","user":"`+user+`","slug":"`+siteId+`"}`, 409)
+	})
+
+	t.Run("ListIncludesRoute", func(t *testing.T) {
+		r := apiReq(t, s, "GET", "/api/site-routes", adminToken, "", 200)
+		require.Contains(t, readBody(t, r), "api.test")
+	})
+
+	t.Run("DeleteRemovesRoute", func(t *testing.T) {
+		id := strconv.Itoa(int(createdID))
+		apiReq(t, s, "DELETE", "/api/site-routes/"+id, adminToken, "", 200)
+		if _, ok := siteroute.Resolve("api.test", "/docs/x"); ok {
+			t.Fatal("route should be gone after delete")
+		}
+	})
 }
 
 // forgedGet issues an anonymous GET with a forged Host header, simulating a

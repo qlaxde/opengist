@@ -130,6 +130,14 @@ func (s *Server) registerRoutes() {
 		apiGist.GET("/metadata", gist.APIGetMetadata, tokenAuthRequired(false), gistInit)
 		apiGist.POST("/metadata", gist.APIUpdateMetadata, tokenAuthRequired(true), gistInit, writePermission)
 
+		// Instance-level site routing table (admin PAT only). Lets tooling map
+		// external hosts/paths onto a gist's /site without an OIDC session.
+		apiSiteRoutes := r.SubGroup("/api/site-routes")
+		apiSiteRoutes.GET("", admin.APIListSiteRoutes, tokenAuthRequired(false), adminRequired)
+		apiSiteRoutes.POST("", admin.APICreateSiteRoute, tokenAuthRequired(true), adminRequired)
+		apiSiteRoutes.POST("/:id", admin.APIUpdateSiteRoute, tokenAuthRequired(true), adminRequired)
+		apiSiteRoutes.DELETE("/:id", admin.APIDeleteSiteRoute, tokenAuthRequired(true), adminRequired)
+
 		sC := r.SubGroup("/:user/:gistname")
 		{
 			sC.Use(gistAnonymousGate, gistInit)

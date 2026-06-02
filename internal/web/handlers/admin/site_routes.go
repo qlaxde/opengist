@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,25 @@ import (
 	"github.com/thomiceli/opengist/internal/web/context"
 	"github.com/thomiceli/opengist/internal/web/siteroute"
 )
+
+// siteRouteGist resolves and validates the target gist for a route DTO. On
+// failure it returns an error whose message is an i18n key describing why
+// (gist not found / not anonymously accessible) so callers can surface it.
+var (
+	errSiteRouteGistNotFound  = errors.New("flash.admin.site-route-gist-not-found")
+	errSiteRouteGistNotPublic = errors.New("flash.admin.site-route-gist-not-public")
+)
+
+func siteRouteGist(dto *db.SiteRouteDTO) (*db.Gist, error) {
+	gist, err := db.GetGist(dto.User, dto.Slug)
+	if err != nil {
+		return nil, errSiteRouteGistNotFound
+	}
+	if !gist.Private.AllowsAnonymousAccess() {
+		return nil, errSiteRouteGistNotPublic
+	}
+	return gist, nil
+}
 
 func AdminSiteRoutes(ctx *context.Context) error {
 	ctx.SetData("htmlTitle", ctx.TrH("admin.site_routes")+" - "+ctx.TrH("admin.admin_panel"))
@@ -36,14 +56,9 @@ func AdminSiteRoutesCreate(ctx *context.Context) error {
 		return ctx.RedirectTo("/admin-panel/site-routes")
 	}
 
-	gist, err := db.GetGist(dto.User, dto.Slug)
-	if err != nil {
-		ctx.AddFlash(ctx.Tr("flash.admin.site-route-gist-not-found"), "error")
-		return ctx.RedirectTo("/admin-panel/site-routes")
-	}
-
-	if !gist.Private.AllowsAnonymousAccess() {
-		ctx.AddFlash(ctx.Tr("flash.admin.site-route-gist-not-public"), "error")
+	gist, gerr := siteRouteGist(dto)
+	if gerr != nil {
+		ctx.AddFlash(ctx.Tr(gerr.Error()), "error")
 		return ctx.RedirectTo("/admin-panel/site-routes")
 	}
 
@@ -89,14 +104,9 @@ func AdminSiteRoutesUpdate(ctx *context.Context) error {
 		return ctx.RedirectTo("/admin-panel/site-routes")
 	}
 
-	gist, err := db.GetGist(dto.User, dto.Slug)
-	if err != nil {
-		ctx.AddFlash(ctx.Tr("flash.admin.site-route-gist-not-found"), "error")
-		return ctx.RedirectTo("/admin-panel/site-routes")
-	}
-
-	if !gist.Private.AllowsAnonymousAccess() {
-		ctx.AddFlash(ctx.Tr("flash.admin.site-route-gist-not-public"), "error")
+	gist, gerr := siteRouteGist(dto)
+	if gerr != nil {
+		ctx.AddFlash(ctx.Tr(gerr.Error()), "error")
 		return ctx.RedirectTo("/admin-panel/site-routes")
 	}
 
