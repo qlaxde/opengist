@@ -244,6 +244,65 @@ func checkRequireLogin(next Handler) Handler {
 	return makeCheckRequireLogin(false)(next)
 }
 
+// gistAnonymousGate runs before gistInit and decides whether an unauthenticated
+// visitor may reach a per-gist route. It honors the gist's own anonymous-exposure
+// visibility:
+//
+//   - PublicVisibility (3): any route is reachable without authentication.
+//   - PublicSiteVisibility (4): only the /site routes are reachable without
+//     authentication; the source page, raw and downloads still require login.
+//
+// For every other visibility it falls back to the global require-login policy
+// (ShouldAllowUnauthenticatedGistAccess), preserving upstream behavior — in
+// particular private gists keep redirecting to /login rather than being loaded.
+// Authenticated requests (session or token) pass straight through to gistInit,
+// which still enforces the per-gist owner/private checks.
+func gistAnonymousGate(next Handler) Handler {
+	return func(ctx *context.Context) error {
+		if ctx.User != nil || getUserByToken(ctx) != nil {
+			return next(ctx)
+		}
+
+		if gist, err := db.GetGist(ctx.Param("user"), gistNameFromParam(ctx)); err == nil && gist != nil {
+			if gist.Private == db.PublicVisibility {
+				return next(ctx)
+			}
+			if gist.Private == db.PublicSiteVisibility && isSiteRoute(ctx) {
+				return next(ctx)
+			}
+		}
+
+		allow, err := auth.ShouldAllowUnauthenticatedGistAccess(handlers.ContextAuthInfo{Context: ctx}, true)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to check if unauthenticated access is allowed")
+		}
+		if !allow {
+			ctx.AddFlash(ctx.Tr("flash.auth.must-be-logged-in"), "error")
+			return ctx.RedirectTo("/login")
+		}
+		return next(ctx)
+	}
+}
+
+// gistNameFromParam strips the extension dispatched by gistInit (.js/.json/.git)
+// from the :gistname route param so the gate looks up the same gist gistInit will.
+func gistNameFromParam(ctx *context.Context) string {
+	gistName := ctx.Param("gistname")
+	switch filepath.Ext(gistName) {
+	case ".js", ".json", ".git":
+		gistName = strings.TrimSuffix(gistName, filepath.Ext(gistName))
+	}
+	return gistName
+}
+
+// isSiteRoute reports whether the matched route is one of the /site routes,
+// using the registered route template (not the raw URL) so a gist literally
+// named "site" cannot be confused for the site endpoint.
+func isSiteRoute(ctx *context.Context) bool {
+	p := ctx.Path()
+	return strings.HasSuffix(p, "/site") || strings.HasSuffix(p, "/site/*")
+}
+
 func noRouteFound(ctx *context.Context) error {
 	return ctx.NotFound("Page not found")
 }

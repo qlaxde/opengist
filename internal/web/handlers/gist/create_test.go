@@ -154,7 +154,7 @@ func TestGistCreation(t *testing.T) {
 				"title":   {"Test Gist"},
 				"name":    {"test.txt"},
 				"content": {"hello"},
-				"private": {"3"}, // Valid values are 0, 1, 2
+				"private": {"5"}, // Valid values are 0-4
 			},
 			expectedCode:      400,
 			expectGistCreated: false,
@@ -172,7 +172,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "My Test Gist",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"test.txt"},
 			expectedFileContents: map[string]string{
 				"test.txt": "hello world",
@@ -190,7 +190,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Auto Named",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"gistfile1.txt"},
 			expectedFileContents: map[string]string{
 				"gistfile1.txt": "content without name",
@@ -208,7 +208,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Multi File Gist",
 			expectedNbFiles:    2,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"gistfile1.txt", "file2.md"},
 			expectedFileContents: map[string]string{
 				"gistfile1.txt": "content 1",
@@ -226,7 +226,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "readme.md",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"readme.md"},
 			expectedFileContents: map[string]string{
 				"readme.md": "# README",
@@ -281,7 +281,7 @@ func TestGistCreation(t *testing.T) {
 			expectedTitle:      "Gist With Topics",
 			expectedTopics:     "golang,testing,webdev",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"test.txt"},
 			expectedFileContents: map[string]string{
 				"test.txt": "hello",
@@ -333,7 +333,7 @@ func TestGistCreation(t *testing.T) {
 			expectedTitle:      "Unicode Topics",
 			expectedTopics:     "编程,тест",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"test.txt"},
 		},
 		{
@@ -347,7 +347,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Duplicate Files",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"test.txt"},
 			expectedFileContents: map[string]string{
 				"test.txt": "content2",
@@ -374,7 +374,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Unicode Filename",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"文件.txt"},
 			expectedFileContents: map[string]string{
 				"文件.txt": "hello world",
@@ -391,7 +391,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Path Traversal",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"passwd"},
 			expectedFileContents: map[string]string{
 				"passwd": "malicious",
@@ -408,7 +408,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Mixed Content",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"valid.txt"},
 			expectedFileContents: map[string]string{
 				"valid.txt": "valid content",
@@ -425,7 +425,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Special Chars",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"special.txt"},
 			expectedFileContents: map[string]string{
 				"special.txt": "Line1\nLine2\tTabbed\x00NullByte😀Emoji",
@@ -442,7 +442,7 @@ func TestGistCreation(t *testing.T) {
 			expectGistCreated:  true,
 			expectedTitle:      "Unicode Content",
 			expectedNbFiles:    1,
-			expectedVisibility: db.PublicVisibility,
+			expectedVisibility: db.InternalVisibility,
 			expectedFileNames:  []string{"unicode.txt"},
 			expectedFileContents: map[string]string{
 				"unicode.txt": "Hello 世界 🌍 Привет",

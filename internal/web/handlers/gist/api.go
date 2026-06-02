@@ -94,13 +94,5 @@ func APIListTopics(ctx *context.Context) error {
 }
 
 func visibilityString(v db.Visibility) string {
-	switch v {
-	case db.PublicVisibility:
-		return "public"
-	case db.UnlistedVisibility:
-		return "unlisted"
-	case db.PrivateVisibility:
-		return "private"
-	}
-	return "public"
+	return v.String()
 }

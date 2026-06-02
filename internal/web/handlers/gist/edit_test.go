@@ -50,7 +50,7 @@ func TestVisibility(t *testing.T) {
 
 		gist, err := db.GetGist(username, identifier)
 		require.NoError(t, err)
-		require.Equal(t, db.PublicVisibility, gist.Private)
+		require.Equal(t, db.InternalVisibility, gist.Private)
 	})
 
 	t.Run("NoAuth", func(t *testing.T) {
@@ -61,6 +61,6 @@ func TestVisibility(t *testing.T) {
 
 		gist, err := db.GetGist(username, identifier)
 		require.NoError(t, err)
-		require.Equal(t, db.PublicVisibility, gist.Private)
+		require.Equal(t, db.InternalVisibility, gist.Private)
 	})
 }

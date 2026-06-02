@@ -58,6 +58,7 @@ export default defineConfig({
                     {text: 'Access Tokens', link: '/access-tokens'},
                     {text: 'Gist as JSON', link: '/gist-json'},
                     {text: 'Render a gist as a mini-site', link: '/gist-html'},
+                    {text: 'Gist visibility', link: '/visibility'},
                     {text: 'Import Gists from Github', link: '/import-from-github-gist'},
                     {text: 'Git push options', link: '/git-push-options'},
                 ], collapsed: false

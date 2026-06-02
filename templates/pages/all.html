@@ -128,9 +128,11 @@
                                 <button type="button" class="w-full flex text-slate-700 dark:text-slate-300 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 px-2.5 py-2 text-xs font-medium text-gray-700 dark:text-white shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-500 hover:text-slate-700 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 leading-3" id="search-user-gists-visibility">
                                     <span class="text-gray-700 dark:text-gray-300">{{ .locale.Tr "gist.search.placeholder.visibility" }} :
                                         <span id="visibility-value" class="text-slate-700 dark:text-slate-300">
-                                            {{ if eq .visibility "public" }}{{ .locale.Tr "gist.search.placeholder.public" }}
+                                            {{ if eq .visibility "internal" }}{{ .locale.Tr "gist.search.placeholder.internal" }}
                                             {{ else if eq .visibility "unlisted" }}{{ .locale.Tr "gist.search.placeholder.unlisted" }}
                                             {{ else if eq .visibility "private" }}{{ .locale.Tr "gist.search.placeholder.private" }}
+                                            {{ else if eq .visibility "public" }}{{ .locale.Tr "gist.search.placeholder.public" }}
+                                            {{ else if eq .visibility "public_site" }}{{ .locale.Tr "gist.search.placeholder.public_site" }}
                                             {{ else }}{{ .locale.Tr "gist.search.placeholder.all" }}
                                             {{ end }}
                                         </span>
@@ -147,8 +149,8 @@
                                     </button>
                                 </div>
                                 <div class="" role="none">
-                                    <button type="button" data-visibility="public" data-visibility-str="{{ .locale.Tr "gist.search.placeholder.public" }}" class="text-slate-700 dark:text-slate-300 w-full flex px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-black dark:hover:text-white hover:text-white hover:bg-primary-500" role="menuitem">
-                                        {{ .locale.Tr "gist.search.placeholder.public" }}
+                                    <button type="button" data-visibility="internal" data-visibility-str="{{ .locale.Tr "gist.search.placeholder.internal" }}" class="text-slate-700 dark:text-slate-300 w-full flex px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-black dark:hover:text-white hover:text-white hover:bg-primary-500" role="menuitem">
+                                        {{ .locale.Tr "gist.search.placeholder.internal" }}
                                     </button>
                                 </div>
                                 <div class="" role="none">
@@ -157,8 +159,18 @@
                                     </button>
                                 </div>
                                 <div class="" role="none">
-                                    <button type="button" data-visibility="private" data-visibility-str="{{ .locale.Tr "gist.search.placeholder.private" }}" class="text-slate-700 dark:text-slate-300 w-full flex px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-black dark:hover:text-white hover:text-white hover:bg-primary-500 hover:rounded-b-md" role="menuitem">
+                                    <button type="button" data-visibility="private" data-visibility-str="{{ .locale.Tr "gist.search.placeholder.private" }}" class="text-slate-700 dark:text-slate-300 w-full flex px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-black dark:hover:text-white hover:text-white hover:bg-primary-500" role="menuitem">
                                         {{ .locale.Tr "gist.search.placeholder.private" }}
+                                    </button>
+                                </div>
+                                <div class="" role="none">
+                                    <button type="button" data-visibility="public" data-visibility-str="{{ .locale.Tr "gist.search.placeholder.public" }}" class="text-slate-700 dark:text-slate-300 w-full flex px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-black dark:hover:text-white hover:text-white hover:bg-primary-500" role="menuitem">
+                                        {{ .locale.Tr "gist.search.placeholder.public" }}
+                                    </button>
+                                </div>
+                                <div class="" role="none">
+                                    <button type="button" data-visibility="public_site" data-visibility-str="{{ .locale.Tr "gist.search.placeholder.public_site" }}" class="text-slate-700 dark:text-slate-300 w-full flex px-3 py-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-black dark:hover:text-white hover:text-white hover:bg-primary-500 hover:rounded-b-md" role="menuitem">
+                                        {{ .locale.Tr "gist.search.placeholder.public_site" }}
                                     </button>
                                 </div>
                                 <input type="hidden" name="visibility" value="{{ .visibility }}" />

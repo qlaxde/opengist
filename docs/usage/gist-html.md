@@ -52,13 +52,18 @@ revision you're currently viewing.
 
 ## Visibility
 
-The endpoint honors the same visibility rules as the gist page itself:
+The endpoint honors the gist's [visibility](/visibility):
 
-- **Public** gists — anyone can render.
-- **Unlisted** gists — anyone with the URL can render.
+- **Internal** / **Unlisted** gists — any logged-in user (with the link for
+  unlisted) can render.
 - **Private** gists — only the owner, or a request with an
   `Authorization: Token <token>` header whose owner is the gist owner and
   whose scope is at least Read.
+- **Public** gists — anyone can render, no login required.
+- **Public site** gists — anyone can render `/site` **without login**, while the
+  source page, raw files and downloads still require authentication. This is the
+  level to use when you want to share a rendered page but keep its source behind
+  login.
 
 ## Security note
 

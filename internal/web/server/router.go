@@ -128,7 +128,7 @@ func (s *Server) registerRoutes() {
 
 		sC := r.SubGroup("/:user/:gistname")
 		{
-			sC.Use(makeCheckRequireLogin(true), gistInit)
+			sC.Use(gistAnonymousGate, gistInit)
 			sC.GET("", gist.GistIndex)
 			sC.GET("/rev/:revision", gist.GistIndex)
 			sC.GET("/revisions", gist.Revisions)

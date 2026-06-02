@@ -20,19 +20,33 @@ import (
 type Visibility int
 
 const (
-	PublicVisibility Visibility = iota
+	// InternalVisibility (formerly "public") is listed and readable by any
+	// logged-in user, but still requires authentication when require-login is on.
+	InternalVisibility Visibility = iota
+	// UnlistedVisibility is link-only among logged-in users.
 	UnlistedVisibility
+	// PrivateVisibility is owner/admin only.
 	PrivateVisibility
+	// PublicVisibility is reachable by anyone without authentication (the whole
+	// gist: source page, raw, and /site), but is never listed — link-only.
+	PublicVisibility
+	// PublicSiteVisibility exposes only the rendered /site without authentication;
+	// the source page, raw, and downloads still require login. Link-only.
+	PublicSiteVisibility
 )
 
 func (v Visibility) String() string {
 	switch v {
-	case PublicVisibility:
-		return "public"
+	case InternalVisibility:
+		return "internal"
 	case UnlistedVisibility:
 		return "unlisted"
 	case PrivateVisibility:
 		return "private"
+	case PublicVisibility:
+		return "public"
+	case PublicSiteVisibility:
+		return "public_site"
 	default:
 		return "???"
 	}
@@ -44,25 +58,45 @@ func (v Visibility) Uint() uint {
 
 func (v Visibility) Next() Visibility {
 	switch v {
-	case PublicVisibility:
+	case InternalVisibility:
 		return UnlistedVisibility
 	case UnlistedVisibility:
 		return PrivateVisibility
-	default:
+	case PrivateVisibility:
 		return PublicVisibility
+	case PublicVisibility:
+		return PublicSiteVisibility
+	default:
+		return InternalVisibility
 	}
+}
+
+// AllowsAnonymousAccess reports whether unauthenticated visitors may reach the
+// gist at all (either the whole gist or just its rendered site).
+func (v Visibility) AllowsAnonymousAccess() bool {
+	return v == PublicVisibility || v == PublicSiteVisibility
+}
+
+// AllowsAnonymousSiteOnly reports whether unauthenticated visitors are limited
+// to the rendered /site and must still log in for the source/raw/download.
+func (v Visibility) AllowsAnonymousSiteOnly() bool {
+	return v == PublicSiteVisibility
 }
 
 func ParseVisibility[T string | int](v T) Visibility {
 	switch s := fmt.Sprint(v); s {
-	case "0", "public":
-		return PublicVisibility
+	case "0", "internal":
+		return InternalVisibility
 	case "1", "unlisted":
 		return UnlistedVisibility
 	case "2", "private":
 		return PrivateVisibility
-	default:
+	case "3", "public":
 		return PublicVisibility
+	case "4", "public_site":
+		return PublicSiteVisibility
+	default:
+		return InternalVisibility
 	}
 }
 
@@ -597,16 +631,7 @@ func (gist *Gist) UpdatePreviewAndCount(withTimestampUpdate bool) error {
 }
 
 func (gist *Gist) VisibilityStr() string {
-	switch gist.Private {
-	case PublicVisibility:
-		return "public"
-	case UnlistedVisibility:
-		return "unlisted"
-	case PrivateVisibility:
-		return "private"
-	default:
-		return ""
-	}
+	return gist.Private.String()
 }
 
 func (gist *Gist) Identifier() string {
@@ -750,7 +775,7 @@ func (dto *GistDTO) HasMetadata() bool {
 }
 
 type VisibilityDTO struct {
-	Private Visibility `validate:"number,min=0,max=2" form:"private"`
+	Private Visibility `validate:"number,min=0,max=4" form:"private"`
 }
 
 type FileDTO struct {

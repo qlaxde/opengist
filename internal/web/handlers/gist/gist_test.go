@@ -165,7 +165,7 @@ func TestGistJson(t *testing.T) {
 		require.Equal(t, identifier, result["id"])
 		require.Equal(t, gist.Uuid, result["uuid"])
 		require.Equal(t, gist.Title, result["title"])
-		require.Equal(t, "public", result["visibility"])
+		require.Equal(t, "internal", result["visibility"])
 		require.Equal(t, []interface{}{"hello", "opengist"}, result["topics"])
 		require.Equal(t, []interface{}{
 			map[string]interface{}{
@@ -291,6 +291,59 @@ func TestGistAccess(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGistAnonymousVisibility(t *testing.T) {
+	s := webtest.Setup(t)
+	defer webtest.Teardown(t)
+
+	s.Register(t, "thomas")
+
+	// Each gist carries an HTML file so the /site route renders.
+	createHtmlGist := func(t *testing.T, visibility string) (string, string) {
+		s.Login(t, "thomas")
+		resp := s.Request(t, "POST", "/", url.Values{
+			"title":   {"Site"},
+			"name":    {"index.html"},
+			"content": {"<!DOCTYPE html><html><body><h1>hi</h1></body></html>"},
+			"private": {visibility},
+		}, 302)
+		parts := strings.Split(strings.TrimPrefix(resp.Header.Get("Location"), "/"), "/")
+		require.Len(t, parts, 2)
+		return parts[0], parts[1]
+	}
+
+	user, internalId := createHtmlGist(t, "0")  // Internal
+	_, publicId := createHtmlGist(t, "3")        // Public (no login, whole gist)
+	_, siteId := createHtmlGist(t, "4")          // Public site (no login, /site only)
+
+	// Force login globally; only per-gist anonymous exposure should bypass it.
+	s.Login(t, "thomas")
+	s.Request(t, "PUT", "/admin-panel/set-config", url.Values{"key": {db.SettingRequireLogin}, "value": {"1"}}, 200)
+	defer func() {
+		s.Login(t, "thomas")
+		s.Request(t, "PUT", "/admin-panel/set-config", url.Values{"key": {db.SettingRequireLogin}, "value": {"0"}}, 200)
+	}()
+	s.Logout()
+
+	t.Run("InternalRequiresLogin", func(t *testing.T) {
+		s.Request(t, "GET", "/"+user+"/"+internalId, nil, 302)
+		s.Request(t, "GET", "/"+user+"/"+internalId+"/site", nil, 302)
+	})
+
+	t.Run("PublicReachableWithoutLogin", func(t *testing.T) {
+		s.Request(t, "GET", "/"+user+"/"+publicId, nil, 200)
+		s.Request(t, "GET", "/"+user+"/"+publicId+"/site", nil, 200)
+		s.Request(t, "GET", "/"+user+"/"+publicId+"/raw/HEAD/index.html", nil, 200)
+	})
+
+	t.Run("PublicSiteExposesSiteOnly", func(t *testing.T) {
+		// Rendered site is anonymous...
+		s.Request(t, "GET", "/"+user+"/"+siteId+"/site", nil, 200)
+		// ...but source page, raw and downloads still require login.
+		s.Request(t, "GET", "/"+user+"/"+siteId, nil, 302)
+		s.Request(t, "GET", "/"+user+"/"+siteId+"/raw/HEAD/index.html", nil, 302)
+	})
 }
 
 func TestGetGistCaseInsensitive(t *testing.T) {

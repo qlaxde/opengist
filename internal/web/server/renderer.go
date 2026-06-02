@@ -109,12 +109,16 @@ func (s *Server) setFuncMap() {
 			return s.dev
 		},
 		"visibilityStr": func(visibility db.Visibility, lowercase bool) string {
-			s := "Public"
+			s := "Internal"
 			switch visibility {
-			case 1:
+			case db.UnlistedVisibility:
 				s = "Unlisted"
-			case 2:
+			case db.PrivateVisibility:
 				s = "Private"
+			case db.PublicVisibility:
+				s = "Public"
+			case db.PublicSiteVisibility:
+				s = "Public site"
 			}
 
 			if lowercase {
